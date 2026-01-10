@@ -340,7 +340,6 @@ const totalPacientes = computed(() => listaLeitos.value.filter(l => l.ocupado).l
                 <transition name="fade" mode="out-in">
                 <div v-if="etapa === 4">
                     <div class="space-y-6">
-                        
                         <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                             <h3 class="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
                                 <i class="fa-solid fa-person-walking"></i> Classificação de Mobilidade
@@ -417,42 +416,69 @@ const totalPacientes = computed(() => listaLeitos.value.filter(l => l.ocupado).l
                                 </li>
                             </ul>
                         </div>
-
                     </div>
                 </div>
                 </transition>
 
                 <div class="flex-grow"></div>
 
-                <footer class="mt-20 pt-10 border-t border-gray-100 text-center pb-10 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.02)]">
-                    <p class="text-gray-600 mb-6 font-medium text-lg tracking-tight">Qualquer dúvida, entre em contato com o Suporte:</p>
+                <div class="mt-12 py-6 border-t border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div class="hidden md:block text-xs text-gray-400 font-bold uppercase tracking-wide">
+                        Sistema de Distribuição
+                    </div>
+                    
+                    <div class="flex gap-4 w-full md:w-auto">
+                        <button v-if="etapa > 1 && etapa !== 4" @click="etapa--" 
+                            class="flex-1 md:flex-none px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 hover:text-primary transition">
+                            Voltar
+                        </button>
+                        
+                        <button v-if="etapa === 4" @click="etapa = 1" 
+                            class="flex-1 md:flex-none px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 hover:text-primary transition">
+                            Voltar p/ Início
+                        </button>
+
+                        <button v-if="etapa === 1" @click="avanarParaPacientes" 
+                            class="flex-1 md:flex-none px-8 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/30 hover:bg-primary-hover hover:shadow-primary/50 transition transform active:scale-95 flex items-center justify-center gap-2">
+                            Iniciar Triagem <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+
+                        <button v-if="etapa === 2" @click="calcular" 
+                            class="flex-1 md:flex-none px-8 py-3 rounded-xl bg-green-500 text-white font-bold shadow-lg shadow-green-500/30 hover:bg-green-600 transition transform active:scale-95 flex items-center justify-center gap-2">
+                            Distribuir Pacientes <i class="fa-solid fa-check"></i>
+                        </button>
+
+                         <button v-if="etapa === 3" @click="reiniciar" 
+                            class="flex-1 md:flex-none px-8 py-3 rounded-xl bg-gray-800 text-white font-bold shadow-lg hover:bg-gray-900 transition transform active:scale-95">
+                            Novo Plantão
+                        </button>
+                    </div>
+                </div>
+
+                <footer class="mt-8 pt-10 border-t border-gray-100 text-center pb-10 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.02)]">
+                    <p class="text-gray-600 mb-6 font-medium text-lg tracking-tight">
+                        Qualquer dúvida, entre em contato com o Suporte:
+                    </p>
                     <div class="flex justify-center items-center gap-6 mb-8">
                         <a href="https://instagram.com/Jeo_Dev" target="_blank" class="transform hover:-translate-y-1 transition duration-300 group">
-                            <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white flex items-center justify-center shadow-lg shadow-pink-500/20 group-hover:shadow-pink-500/40"><i class="fa-brands fa-instagram text-3xl"></i></div>
+                            <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white flex items-center justify-center shadow-lg shadow-pink-500/20 group-hover:shadow-pink-500/40">
+                                <i class="fa-brands fa-instagram text-3xl"></i>
+                            </div>
                             <span class="block text-[10px] mt-2 font-bold text-gray-400 group-hover:text-pink-500 transition">@Jeo_Dev</span>
                         </a>
                         <a href="https://wa.me/5571987790138" target="_blank" class="transform hover:-translate-y-1 transition duration-300 group">
-                            <div class="w-14 h-14 rounded-full bg-[#25D366] text-white flex items-center justify-center shadow-lg shadow-green-500/20 group-hover:shadow-green-500/40"><i class="fa-brands fa-whatsapp text-3xl"></i></div>
+                            <div class="w-14 h-14 rounded-full bg-[#25D366] text-white flex items-center justify-center shadow-lg shadow-green-500/20 group-hover:shadow-green-500/40">
+                                <i class="fa-brands fa-whatsapp text-3xl"></i>
+                            </div>
                             <span class="block text-[10px] mt-2 font-bold text-gray-400 group-hover:text-green-500 transition">WhatsApp</span>
                         </a>
                     </div>
                     <div class="text-sm text-gray-400 font-medium">Jeovan Bispo &copy; 2026. All Rights Reserved</div>
                     <div class="text-xs text-primary mt-1 font-bold opacity-60 uppercase tracking-widest">Sistema de Distribuição</div>
                 </footer>
+
             </div>
         </main>
-
-        <div class="bg-white border-t border-gray-100 p-4 md:px-10 sticky bottom-0 z-40 flex items-center justify-between shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
-            <div class="hidden md:block text-xs text-gray-400 font-bold uppercase tracking-wide">Sistema de Distribuição</div>
-            <div class="flex gap-4 w-full md:w-auto">
-                <button v-if="etapa > 1 && etapa !== 4" @click="etapa--" class="flex-1 md:flex-none px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 hover:text-primary transition">Voltar</button>
-                <button v-if="etapa === 4" @click="etapa = 1" class="flex-1 md:flex-none px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 hover:text-primary transition">Voltar p/ Início</button>
-                
-                <button v-if="etapa === 1" @click="avanarParaPacientes" class="flex-1 md:flex-none px-8 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/30 hover:bg-primary-hover hover:shadow-primary/50 transition transform active:scale-95 flex items-center justify-center gap-2">Iniciar Triagem <i class="fa-solid fa-arrow-right"></i></button>
-                <button v-if="etapa === 2" @click="calcular" class="flex-1 md:flex-none px-8 py-3 rounded-xl bg-green-500 text-white font-bold shadow-lg shadow-green-500/30 hover:bg-green-600 transition transform active:scale-95 flex items-center justify-center gap-2">Distribuir Pacientes <i class="fa-solid fa-check"></i></button>
-                 <button v-if="etapa === 3" @click="reiniciar" class="flex-1 md:flex-none px-8 py-3 rounded-xl bg-gray-800 text-white font-bold shadow-lg hover:bg-gray-900 transition transform active:scale-95">Novo Plantão</button>
-            </div>
-        </div>
     </div>
   </div>
 </template>
