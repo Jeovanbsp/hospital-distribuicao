@@ -12,6 +12,7 @@ const listaTecnicos = ref([]);
 const listaLeitos = ref([]);
 const resultadoDistribuicao = ref([]);
 
+// Gera a lista inicial de técnicos
 const gerarTecnicos = () => {
     const atual = listaTecnicos.value.length;
     const alvo = qtdTecnicos.value;
@@ -30,6 +31,7 @@ const gerarTecnicos = () => {
 };
 gerarTecnicos();
 
+// Inicia a triagem
 const avanarParaPacientes = () => {
     if (!setorSelecionado.value) return alert("Selecione um setor para continuar.");
     if(listaLeitos.value.length === 0 || listaLeitos.value[0]?.setorOrigem !== setorSelecionado.value) {
@@ -53,16 +55,17 @@ const avanarParaPacientes = () => {
     window.scrollTo(0,0);
 };
 
+// Toggle de ocupação
 const toggleLeito = (item) => {
     item.ocupado = !item.ocupado;
     if(!item.ocupado) {
-        // Reset completo
         item.nome = ''; item.mobilidade = 'deambula'; item.grauAcamado = 'pouca';
         item.dispositivos = false; item.irrigacao = false; item.isolamento = false; 
         item.grauExtra = 0; item.motivoExtra = ''; item.evitarTecnicoId = null;
     }
 };
 
+// Executa o algoritmo
 const calcular = () => {
     const pacientesAtivos = listaLeitos.value.filter(l => l.ocupado);
     if (pacientesAtivos.length === 0) return alert("Selecione pelo menos um leito ocupado.");
@@ -74,13 +77,35 @@ const calcular = () => {
     window.scrollTo(0,0);
 };
 
+// Reinicia o sistema
 const reiniciar = () => {
     if(confirm("Iniciar novo plantão?")) {
         etapa.value = 1; resultadoDistribuicao.value = []; setorSelecionado.value = '';
     }
 };
 
+// --- COMPUTEDS ---
 const totalPacientes = computed(() => listaLeitos.value.filter(l => l.ocupado).length);
+
+// Lógica da Fila de Admissão (AJUSTADA)
+// 1º Critério: Menor Quantidade de Pacientes
+// 2º Critério: Menor Carga (Peso)
+const filaAdmissao = computed(() => {
+    if (resultadoDistribuicao.value.length === 0) return [];
+    
+    const ordenados = [...resultadoDistribuicao.value];
+    
+    ordenados.sort((a, b) => {
+        // Prioridade 1: Quantidade de pacientes (Menor ganha)
+        if (a.pacientes.length !== b.pacientes.length) {
+            return a.pacientes.length - b.pacientes.length;
+        }
+        // Prioridade 2: Carga total (Menor ganha)
+        return a.carga - b.carga;
+    });
+    
+    return ordenados;
+});
 </script>
 
 <template>
@@ -98,20 +123,11 @@ const totalPacientes = computed(() => listaLeitos.value.filter(l => l.ocupado).l
         </div>
         
         <nav class="flex-1 p-4 space-y-2">
-            <div class="nav-item" :class="{ 'active': etapa === 1 }" @click="etapa = 1">
-                <i class="fa-solid fa-sliders w-6"></i> Configuração
-            </div>
-            <div class="nav-item" :class="{ 'active': etapa === 2 }" @click="listaLeitos.length > 0 ? etapa = 2 : avanarParaPacientes()">
-                <i class="fa-solid fa-bed-pulse w-6"></i> Triagem
-            </div>
-            <div class="nav-item" :class="{ 'active': etapa === 3 }" @click="resultadoDistribuicao.length > 0 ? etapa = 3 : null">
-                <i class="fa-solid fa-clipboard-list w-6"></i> Relatório
-            </div>
-            
+            <div class="nav-item" :class="{ 'active': etapa === 1 }" @click="etapa = 1"><i class="fa-solid fa-sliders w-6"></i> Configuração</div>
+            <div class="nav-item" :class="{ 'active': etapa === 2 }" @click="listaLeitos.length > 0 ? etapa = 2 : avanarParaPacientes()"><i class="fa-solid fa-bed-pulse w-6"></i> Triagem</div>
+            <div class="nav-item" :class="{ 'active': etapa === 3 }" @click="resultadoDistribuicao.length > 0 ? etapa = 3 : null"><i class="fa-solid fa-clipboard-list w-6"></i> Relatório</div>
             <div class="mt-8 pt-4 border-t border-gray-50">
-                <div class="nav-item" :class="{ 'active': etapa === 4 }" @click="etapa = 4">
-                    <i class="fa-solid fa-book-open w-6"></i> Regras & Pesos
-                </div>
+                <div class="nav-item" :class="{ 'active': etapa === 4 }" @click="etapa = 4"><i class="fa-solid fa-book-open w-6"></i> Regras & Pesos</div>
             </div>
         </nav>
 
@@ -291,6 +307,30 @@ const totalPacientes = computed(() => listaLeitos.value.filter(l => l.ocupado).l
 
                 <transition name="fade" mode="out-in">
                 <div v-if="etapa === 3">
+                    
+                    <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-2xl p-6 mb-8 text-white shadow-lg shadow-gray-200">
+                        <h3 class="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-list-ol"></i> Fila de Admissão
+                        </h3>
+                        <div class="flex flex-wrap gap-4">
+                            <div v-for="(tec, index) in filaAdmissao" :key="tec.id" 
+                                class="flex items-center gap-3 bg-white/10 px-4 py-3 rounded-xl border border-white/10 backdrop-blur-sm">
+                                <div class="w-8 h-8 rounded-full bg-white text-gray-900 font-bold flex items-center justify-center text-sm shadow-md">
+                                    {{ index + 1 }}º
+                                </div>
+                                <div>
+                                    <div class="font-bold text-sm">{{ tec.nome }}</div>
+                                    <div class="text-[10px] text-gray-400 flex gap-2">
+                                        <span>Pacientes: {{ tec.pacientes.length }}</span>
+                                        <span>|</span>
+                                        <span>Carga: {{ tec.carga }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-[10px] text-gray-500 mt-4 italic">* Ordem baseada primeiro na quantidade de pacientes, depois na carga.</p>
+                    </div>
+
                     <div class="grid md:grid-cols-2 gap-6">
                         <div v-for="tec in resultadoDistribuicao" :key="tec.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
                             <div class="p-5 border-b border-gray-50 flex justify-between items-start bg-gradient-to-br from-white to-gray-50">
@@ -412,7 +452,11 @@ const totalPacientes = computed(() => listaLeitos.value.filter(l => l.ocupado).l
                                 </li>
                                 <li class="flex gap-3">
                                     <div class="min-w-[24px] h-6 rounded-full bg-primary-light text-primary flex items-center justify-center text-xs font-bold">3</div>
-                                    <p><strong>Manter Enfermaria:</strong> Se ativado, o sistema dá preferência para que o mesmo técnico assuma todos os leitos de um mesmo quarto (ex: 306-1 e 306-2), facilitando a logística.</p>
+                                    <p><strong>Igualdade Numérica:</strong> O sistema preenche as vagas com pacientes médios/leves focando em deixar todos com o <strong>mesmo número de pacientes</strong>.</p>
+                                </li>
+                                <li class="flex gap-3">
+                                    <div class="min-w-[24px] h-6 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs font-bold">4</div>
+                                    <p><strong>Fila de Admissão:</strong> Quem termina com <strong>menos pacientes</strong> é o 1º da fila. Se empatar, ganha quem tiver a menor carga.</p>
                                 </li>
                             </ul>
                         </div>

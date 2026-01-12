@@ -15,16 +15,17 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         if (p.mobilidade === 'deambula') p.peso += 1;
         if (p.mobilidade === 'semi') p.peso += 2;
         if (p.mobilidade === 'acamado') {
+            // Se tiver pouca mobilidade, pesa mais
             p.peso += (p.grauAcamado === 'pouca') ? 4 : 3;
         }
         
         // --- Procedimentos Técnicos ---
         if (p.dispositivos) p.peso += 1; // SNE/GTM
-        if (p.irrigacao) p.peso += 2;    // Irrigação (Peso de Semi)
+        if (p.irrigacao) p.peso += 2;    // Irrigação
 
-        // --- Complexidade Extra (Comportamental/Familiar) ---
+        // --- Complexidade Extra ---
         if (p.grauExtra) {
-            p.peso += parseInt(p.grauExtra); // Soma 1, 2 ou 3
+            p.peso += parseInt(p.grauExtra);
         }
     });
 
@@ -33,7 +34,7 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
     const acamadosLimpos = pacientes.filter(p => !p.isolamento && p.mobilidade === 'acamado');
     const resto = pacientes.filter(p => !p.isolamento && p.mobilidade !== 'acamado');
 
-    // Ordenar (Mais pesados primeiro)
+    // Ordenar (Mais pesados primeiro para garantir distribuição justa dos difíceis)
     acamadosLimpos.sort((a, b) => b.peso - a.peso);
     resto.sort((a, b) => b.peso - a.peso);
 
@@ -66,14 +67,15 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         return true;
     };
 
-    // --- FASE 1: Isolamentos ---
+    // --- FASE 1: Isolamentos (Prioridade Sanitária) ---
     isolamentos.forEach(pac => {
         let candidatos = tecnicos.filter(t => !t.temIsolamento && podeReceber(t, pac));
         if (candidatos.length === 0) candidatos = tecnicos.filter(t => podeReceber(t, pac));
         if (candidatos.length === 0) candidatos = tecnicos.filter(t => !(t.restricao && pac.mobilidade !== 'deambula'));
 
         if (candidatos.length > 0) {
-            candidatos.sort((a, b) => a.carga - b.carga);
+            // Aqui mantemos menor carga para isolamento não cair sempre no mesmo se todos tiverem 0 pacientes
+            candidatos.sort((a, b) => a.pacientes.length - b.pacientes.length || a.carga - b.carga);
             const escolhido = candidatos[0];
             escolhido.pacientes.push(pac);
             escolhido.carga += pac.peso;
@@ -82,20 +84,18 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         }
     });
 
-    // --- FASE 2: Acamados (Prioridade: Quantidade > Enfermaria > Carga) ---
+    // --- FASE 2: Acamados (Prioridade: Quantidade de Pesados) ---
+    // Distribui os pesados igualmente "por cabeça"
     acamadosLimpos.forEach(pac => {
         let candidatos = tecnicos.filter(t => podeReceber(t, pac));
 
         if (candidatos.length > 0) {
             candidatos.sort((a, b) => {
+                // 1. Quem tem MENOS acamados recebe primeiro
                 if (a.qtdAcamados !== b.qtdAcamados) return a.qtdAcamados - b.qtdAcamados;
-                
-                if (evitarQuebraEnfermaria) {
-                    const aTem = temColegaDeQuarto(a, pac);
-                    const bTem = temColegaDeQuarto(b, pac);
-                    if (aTem && !bTem) return -1; 
-                    if (!aTem && bTem) return 1;  
-                }
+                // 2. Quem tem MENOS pacientes no total
+                if (a.pacientes.length !== b.pacientes.length) return a.pacientes.length - b.pacientes.length;
+                // 3. Desempate por carga
                 return a.carga - b.carga;
             });
             
@@ -104,6 +104,7 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
             escolhido.carga += pac.peso;
             escolhido.qtdAcamados++;
         } else {
+            // Fallback
             let fallback = tecnicos.filter(t => !(t.restricao && pac.mobilidade !== 'deambula'));
             if(fallback.length > 0) {
                 fallback.sort((a, b) => a.qtdAcamados - b.qtdAcamados);
@@ -114,28 +115,41 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         }
     });
 
-    // --- FASE 3: O Resto (Prioridade: Carga > Enfermaria) ---
+    // --- FASE 3: O Resto (Prioridade: IGUALDADE NUMÉRICA) ---
+    // Aqui mudou: Agora o foco é encher quem tem menos pacientes
     resto.forEach(pac => {
         let candidatos = tecnicos.filter(t => podeReceber(t, pac));
 
         if (candidatos.length > 0) {
             candidatos.sort((a, b) => {
-                let cargaA = a.carga;
-                let cargaB = b.carga;
-
-                if (evitarQuebraEnfermaria) {
-                    if (temColegaDeQuarto(a, pac)) cargaA -= 2.5; 
-                    if (temColegaDeQuarto(b, pac)) cargaB -= 2.5;
+                // 1. CRITÉRIO SUPREMO: Número de pacientes
+                // Se A tem 3 pacientes e B tem 4, A ganha o paciente, independente do peso.
+                if (a.pacientes.length !== b.pacientes.length) {
+                    return a.pacientes.length - b.pacientes.length;
                 }
-                return cargaA - cargaB;
+
+                // 2. Critério Secundário: Manter Enfermaria (se ativado)
+                // Só entra aqui se a quantidade de pacientes for IGUAL
+                if (evitarQuebraEnfermaria) {
+                    const aTem = temColegaDeQuarto(a, pac);
+                    const bTem = temColegaDeQuarto(b, pac);
+                    if (aTem && !bTem) return -1; 
+                    if (!aTem && bTem) return 1;  
+                }
+
+                // 3. Critério Terciário: Carga (Peso)
+                // Só usa o peso para desempatar se quantidade for igual
+                return a.carga - b.carga;
             });
+            
             const escolhido = candidatos[0];
             escolhido.pacientes.push(pac);
             escolhido.carga += pac.peso;
         } else {
+            // Fallback
             let fallback = tecnicos.filter(t => !(t.restricao && pac.mobilidade !== 'deambula'));
             if(fallback.length > 0) {
-                fallback.sort((a, b) => a.carga - b.carga);
+                fallback.sort((a, b) => a.pacientes.length - b.pacientes.length);
                 fallback[0].pacientes.push(pac);
                 fallback[0].carga += pac.peso;
             }
