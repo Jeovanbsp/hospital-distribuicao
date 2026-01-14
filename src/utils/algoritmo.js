@@ -1,57 +1,65 @@
-export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria = false, manterProximidade = false) { // <--- NOVO PARAMETRO
-    // 1. Resetar técnicos
+export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria = false, manterProximidade = false) {
+    // 1. Resetar técnicos e contadores
     tecnicos.forEach(t => {
         t.pacientes = [];
         t.carga = 0;
         t.temIsolamento = false;
         t.qtdAcamados = 0;
         t.qtdDietas = 0;
+        t.qtdIrrigacoes = 0;
     });
 
     // 2. Calcular pesos individuais
     pacientes.forEach(p => {
         p.peso = 0;
+        // Mobilidade
         if (p.mobilidade === 'deambula') p.peso += 1;
         if (p.mobilidade === 'semi') p.peso += 2;
         if (p.mobilidade === 'acamado') p.peso += (p.grauAcamado === 'pouca') ? 4 : 3;
-        if (p.dispositivos) p.peso += 1;
-        if (p.irrigacao) p.peso += 2;
+        
+        // Procedimentos
+        if (p.dispositivos) p.peso += 1; // SNE/GTM
+        if (p.dreno) p.peso += 1;        // DRENO (+1)
+        if (p.selo) p.peso += 1;         // SELO (+1) <--- NOVO SEPARADO
+        if (p.irrigacao) p.peso += 2;    // Irrigação (+2)
+        
+        // Extra
         if (p.grauExtra) p.peso += parseInt(p.grauExtra);
     });
 
     // 3. Separar Grupos
     const isolamentos = pacientes.filter(p => p.isolamento);
     const acamadosLimpos = pacientes.filter(p => !p.isolamento && p.mobilidade === 'acamado');
-    const dietasLimpas = pacientes.filter(p => !p.isolamento && p.mobilidade !== 'acamado' && p.dispositivos);
-    const resto = pacientes.filter(p => !p.isolamento && p.mobilidade !== 'acamado' && !p.dispositivos);
+    const irrigacoesLimpas = pacientes.filter(p => !p.isolamento && p.mobilidade !== 'acamado' && p.irrigacao);
+    const dietasLimpas = pacientes.filter(p => !p.isolamento && p.mobilidade !== 'acamado' && !p.irrigacao && p.dispositivos);
+    // Drenos e Selos entram no "Resto" (ou dieta se tiverem dieta), sendo distribuídos por carga/qtd
+    const resto = pacientes.filter(p => !p.isolamento && p.mobilidade !== 'acamado' && !p.irrigacao && !p.dispositivos);
 
-    // Ordenar
-    isolamentos.sort((a, b) => b.peso - a.peso);
-    acamadosLimpos.sort((a, b) => b.peso - a.peso);
-    dietasLimpas.sort((a, b) => b.peso - a.peso);
-    resto.sort((a, b) => b.peso - a.peso);
+    // Ordenar (Mais pesados primeiro)
+    const sortPeso = (a, b) => b.peso - a.peso;
+    isolamentos.sort(sortPeso);
+    acamadosLimpos.sort(sortPeso);
+    irrigacoesLimpas.sort(sortPeso);
+    dietasLimpas.sort(sortPeso);
+    resto.sort(sortPeso);
 
     // --- HELPERS ---
-    const getEnfermaria = (leito) => leito ? (leito.includes('-') ? leito.split('-')[0] : leito) : '';
-    
-    // Transforma "306-1" em 306 para calcular matemática
     const getNumeroLeito = (leito) => {
         if (!leito) return 9999;
-        const num = leito.split('-')[0]; // Pega "306" de "306-1"
-        return parseInt(num.replace(/\D/g, '')) || 9999; // Remove letras se houver
+        const num = leito.split('-')[0];
+        return parseInt(num.replace(/\D/g, '')) || 9999;
     };
+
+    const getEnfermaria = (leito) => leito ? (leito.includes('-') ? leito.split('-')[0] : leito) : '';
 
     const temColegaDeQuarto = (tec, pac) => {
         const enfPac = getEnfermaria(pac.leito);
         return tec.pacientes.some(p => getEnfermaria(p.leito) === enfPac);
     };
 
-    // Calcula a distância do novo paciente para o paciente MAIS PRÓXIMO que o técnico já tem
     const getDistanciaMinima = (tec, pac) => {
-        if (tec.pacientes.length === 0) return 0; // Se tá vazio, tanto faz
+        if (tec.pacientes.length === 0) return 0;
         const numPac = getNumeroLeito(pac.leito);
-        
-        // Encontra a menor diferença absoluta
         const distancias = tec.pacientes.map(p => Math.abs(numPac - getNumeroLeito(p.leito)));
         return Math.min(...distancias);
     };
@@ -76,6 +84,7 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         if (pac.isolamento) tec.temIsolamento = true;
         if (pac.mobilidade === 'acamado') tec.qtdAcamados++;
         if (pac.dispositivos) tec.qtdDietas++;
+        if (pac.irrigacao) tec.qtdIrrigacoes++;
     };
 
     // --- FASE 1: Isolamentos ---
@@ -90,21 +99,27 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         }
     });
 
-    // --- FASE 2: Acamados (Prioridade: Igualdade de Pesados) ---
+    // --- FASE 2: Acamados ---
     acamadosLimpos.forEach(pac => {
         let candidatos = tecnicos.filter(t => podeReceber(t, pac));
         if (candidatos.length > 0) {
             candidatos.sort((a, b) => {
                 if (a.qtdAcamados !== b.qtdAcamados) return a.qtdAcamados - b.qtdAcamados;
-                if (a.pacientes.length !== b.pacientes.length) return a.pacientes.length - b.pacientes.length;
+                if (pac.irrigacao && a.qtdIrrigacoes !== b.qtdIrrigacoes) return a.qtdIrrigacoes - b.qtdIrrigacoes;
                 
-                // Proximidade entra aqui também como desempate
-                if (manterProximidade) {
-                    const distA = getDistanciaMinima(a, pac);
-                    const distB = getDistanciaMinima(b, pac);
-                    if (distA !== distB) return distA - distB; // Menor distância ganha
+                if (evitarQuebraEnfermaria) {
+                    const aTem = temColegaDeQuarto(a, pac);
+                    const bTem = temColegaDeQuarto(b, pac);
+                    const diferencaQtd = a.pacientes.length - b.pacientes.length;
+                    if (aTem && !bTem && diferencaQtd <= 1) return -1;
+                    if (!aTem && bTem && diferencaQtd >= -1) return 1;
                 }
 
+                if (a.pacientes.length !== b.pacientes.length) return a.pacientes.length - b.pacientes.length;
+                if (manterProximidade) {
+                    const distA = getDistanciaMinima(a, pac); const distB = getDistanciaMinima(b, pac);
+                    if (distA !== distB) return distA - distB;
+                }
                 return a.carga - b.carga;
             });
             atribuir(candidatos[0], pac);
@@ -117,29 +132,50 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         }
     });
 
-    // --- FASE 3: Dietas ---
+    // --- FASE 3: Irrigações ---
+    irrigacoesLimpas.forEach(pac => {
+        let candidatos = tecnicos.filter(t => podeReceber(t, pac));
+        if (candidatos.length > 0) {
+            candidatos.sort((a, b) => {
+                if (a.qtdIrrigacoes !== b.qtdIrrigacoes) return a.qtdIrrigacoes - b.qtdIrrigacoes;
+                if (a.pacientes.length !== b.pacientes.length) return a.pacientes.length - b.pacientes.length;
+                if (evitarQuebraEnfermaria) {
+                    const aTem = temColegaDeQuarto(a, pac); const bTem = temColegaDeQuarto(b, pac);
+                    if (aTem && !bTem && (a.pacientes.length - b.pacientes.length <= 1)) return -1;
+                    if (!aTem && bTem && (b.pacientes.length - a.pacientes.length <= 1)) return 1;
+                }
+                if (manterProximidade) {
+                    const distA = getDistanciaMinima(a, pac); const distB = getDistanciaMinima(b, pac);
+                    if (distA !== distB) return distA - distB;
+                }
+                return a.carga - b.carga;
+            });
+            atribuir(candidatos[0], pac);
+        } else {
+            let fallback = tecnicos.filter(t => !(t.restricao && pac.mobilidade !== 'deambula'));
+            if(fallback.length > 0) {
+                fallback.sort((a, b) => a.qtdIrrigacoes - b.qtdIrrigacoes);
+                atribuir(fallback[0], pac);
+            }
+        }
+    });
+
+    // --- FASE 4: Dietas ---
     dietasLimpas.forEach(pac => {
         let candidatos = tecnicos.filter(t => podeReceber(t, pac));
         if (candidatos.length > 0) {
             candidatos.sort((a, b) => {
                 if (a.qtdDietas !== b.qtdDietas) return a.qtdDietas - b.qtdDietas;
                 if (a.pacientes.length !== b.pacientes.length) return a.pacientes.length - b.pacientes.length;
-                
                 if (evitarQuebraEnfermaria) {
-                    const aTem = temColegaDeQuarto(a, pac);
-                    const bTem = temColegaDeQuarto(b, pac);
-                    if (aTem && !bTem) return -1; 
-                    if (!aTem && bTem) return 1;  
+                    const aTem = temColegaDeQuarto(a, pac); const bTem = temColegaDeQuarto(b, pac);
+                    if (aTem && !bTem && (a.pacientes.length - b.pacientes.length <= 1)) return -1;
+                    if (!aTem && bTem && (b.pacientes.length - a.pacientes.length <= 1)) return 1;
                 }
-
-                // Critério de Proximidade (Vizinhos)
                 if (manterProximidade) {
-                    const distA = getDistanciaMinima(a, pac);
-                    const distB = getDistanciaMinima(b, pac);
-                    // Se a diferença for grande, prioriza. Se for pequena, ignora.
+                    const distA = getDistanciaMinima(a, pac); const distB = getDistanciaMinima(b, pac);
                     if (distA !== distB) return distA - distB;
                 }
-
                 return a.carga - b.carga;
             });
             atribuir(candidatos[0], pac);
@@ -152,29 +188,22 @@ export function calcularDistribuicao(pacientes, tecnicos, evitarQuebraEnfermaria
         }
     });
 
-    // --- FASE 4: O Resto ---
+    // --- FASE 5: O Resto ---
     resto.forEach(pac => {
         let candidatos = tecnicos.filter(t => podeReceber(t, pac));
         if (candidatos.length > 0) {
             candidatos.sort((a, b) => {
-                // 1. Número de pacientes (Supremo)
-                if (a.pacientes.length !== b.pacientes.length) return a.pacientes.length - b.pacientes.length;
-
-                // 2. Enfermaria (Colegas de quarto)
                 if (evitarQuebraEnfermaria) {
-                    const aTem = temColegaDeQuarto(a, pac);
-                    const bTem = temColegaDeQuarto(b, pac);
-                    if (aTem && !bTem) return -1; 
-                    if (!aTem && bTem) return 1;  
+                    const aTem = temColegaDeQuarto(a, pac); const bTem = temColegaDeQuarto(b, pac);
+                    const diferencaQtd = a.pacientes.length - b.pacientes.length;
+                    if (aTem && !bTem && diferencaQtd <= 1) return -1;
+                    if (!aTem && bTem && diferencaQtd >= -1) return 1;
                 }
-
-                // 3. Proximidade (Vizinhos de porta) - NOVO
+                if (a.pacientes.length !== b.pacientes.length) return a.pacientes.length - b.pacientes.length;
                 if (manterProximidade) {
-                    const distA = getDistanciaMinima(a, pac);
-                    const distB = getDistanciaMinima(b, pac);
+                    const distA = getDistanciaMinima(a, pac); const distB = getDistanciaMinima(b, pac);
                     if (distA !== distB) return distA - distB;
                 }
-
                 return a.carga - b.carga;
             });
             atribuir(candidatos[0], pac);
